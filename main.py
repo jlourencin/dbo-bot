@@ -10,7 +10,7 @@ import json
 # =========================
 
 DISCORD_WEBHOOK = os.environ.get("DISCORD_WEBHOOK_URL")
-CHECK_INTERVAL = 60
+CHECK_INTERVAL = 60  # segundos entre checagens
 STATE_FILE = "last_levels.json"
 
 # Players via variável do Railway
@@ -46,18 +46,85 @@ def save_state(state):
         print(f"[ERRO] Falha ao salvar {STATE_FILE}: {e}")
 
 # =========================
-# DISCORD
+# DISCORD – EMBEDS BONITAS
 # =========================
 
-def send_discord_message(content):
+def send_level_up_embed(nick: str, old_level: int, new_level: int):
+    """Embed no estilo 'UPOU PARA MORRER'."""
     if not DISCORD_WEBHOOK:
         print("[AVISO] DISCORD_WEBHOOK_URL não configurado.")
         return
+
+    diff = new_level - old_level
+
+    payload = {
+        "embeds": [
+            {
+                "title": "💀 UPOU PARA MORRER",
+                "description": f"{nick} subiu de nível e já vai morrer kkkk xd 💀🗡️",
+                "color": 0x00FF00,  # verde
+                "fields": [
+                    {
+                        "name": "👤 Jogador",
+                        "value": nick,
+                        "inline": True
+                    },
+                    {
+                        "name": "📈 Level",
+                        "value": f"{old_level} ➜ {new_level} (+{diff})",
+                        "inline": True
+                    },
+                ],
+                "footer": {
+                    "text": "🔥 JOHTTO HACKER DEUS"
+                }
+            }
+        ]
+    }
+
     try:
-        r = requests.post(DISCORD_WEBHOOK, json={"content": content}, timeout=10)
+        r = requests.post(DISCORD_WEBHOOK, json=payload, timeout=10)
         r.raise_for_status()
     except Exception as e:
-        print(f"[ERRO] Falha ao enviar webhook: {e}")
+        print(f"[ERRO] Falha ao enviar embed de UP: {e}")
+
+
+def send_level_down_embed(nick: str, old_level: int, new_level: int):
+    """Embed no estilo 'XIII MORREU NOOB' (quando o level cai / reset)."""
+    if not DISCORD_WEBHOOK:
+        print("[AVISO] DISCORD_WEBHOOK_URL não configurado.")
+        return
+
+    payload = {
+        "embeds": [
+            {
+                "title": "💀 XIII MORREU NOOB",
+                "description": f"{nick} já morreu noobasso 💀",
+                "color": 0xFF0000,  # vermelho
+                "fields": [
+                    {
+                        "name": "👤 Jogador",
+                        "value": nick,
+                        "inline": True
+                    },
+                    {
+                        "name": "📉 Level",
+                        "value": f"{old_level} ➜ {new_level}",
+                        "inline": True
+                    },
+                ],
+                "footer": {
+                    "text": "🔥 JOHTTO HACKER DEUS"
+                }
+            }
+        ]
+    }
+
+    try:
+        r = requests.post(DISCORD_WEBHOOK, json=payload, timeout=10)
+        r.raise_for_status()
+    except Exception as e:
+        print(f"[ERRO] Falha ao enviar embed de MORTE/reset: {e}")
 
 # =========================
 # API DO DBO TAIKAI
@@ -86,7 +153,6 @@ def get_player_level_from_api(nick: str) -> int | None:
         "Origin": "https://dbotaikai.top",
         "Referer": referer,
         "X-Requested-With": "XMLHttpRequest",
-
         # Token obrigatório
         "X-Secret-Token": secret_token,
     }
@@ -97,12 +163,11 @@ def get_player_level_from_api(nick: str) -> int | None:
             params=params,
             headers=headers,
             timeout=10,
-            allow_redirects=False,  # Importante para não mascarar redirects
+            allow_redirects=False,  # não mascarar redirects
         )
 
         print(f"[DEBUG] Status {r.status_code} | URL final: {r.url}")
 
-        # Se houve redirect, mostra o destino e retorna None
         if 300 <= r.status_code < 400:
             loc = r.headers.get("Location")
             print(f"[DEBUG] Servidor redirecionou {nick} para: {loc}")
@@ -155,20 +220,18 @@ def monitor_players_loop():
                 save_state(state)
                 continue
 
-            # Up
+            # UP
             if level > old:
                 diff = level - old
-                msg = f"🆙 {nick} upou! {old} ➜ {level} (+{diff})"
-                print(msg)
-                send_discord_message(msg)
+                print(f"🆙 {nick} upou! {old} ➜ {level} (+{diff})")
+                send_level_up_embed(nick, old, level)
                 state[nick] = level
                 save_state(state)
 
-            # Reset
+            # Level menor (reset / morte)
             elif level < old:
-                msg = f"⚠️ {nick} mudou de level: {old} ➜ {level} (reset?)"
-                print(msg)
-                send_discord_message(msg)
+                print(f"⚠️ {nick} mudou de level: {old} ➜ {level} (reset/morte?)")
+                send_level_down_embed(nick, old, level)
                 state[nick] = level
                 save_state(state)
 
@@ -183,11 +246,10 @@ def start_monitor_thread():
     t.start()
 
 # =========================
-# MAIN SERVER
+# MAIN
 # =========================
 
 if __name__ == "__main__":
     start_monitor_thread()
-
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
